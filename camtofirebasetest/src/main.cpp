@@ -1,6 +1,6 @@
-#include "WiFi.h"
+#include <WiFi.h>
 #include "esp_camera.h"
-#include "Arduino.h"
+#include <Arduino.h>
 #include "soc/soc.h"           // Disable brownout problems
 #include "soc/rtc_cntl_reg.h"  // Disable brownout problems
 #include "driver/rtc_io.h"
@@ -9,10 +9,12 @@
 #include <Firebase_ESP_Client.h>
 //Provide the token generation process info.
 #include <addons/TokenHelper.h>
+#include "NTPClient.h"
+#include <WifiUDP.h>
 
 //Replace with your network credentials
-const char* ssid = "Ye";
-const char* password = "1234asdf";
+const char* ssid = "DESKTOP-SIG8L49 31400000";
+const char* password = "320?A46j";
 
 // Insert Firebase project API Key
 #define API_KEY "KKeQ43CDWIMORKzCNV1l65DVG4tr7FWTAIqAzgRt"
@@ -44,6 +46,7 @@ const char* password = "1234asdf";
 #define VSYNC_GPIO_NUM    25
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
+#define LED_FLASH         4
 
 boolean takeNewPhoto = true;
 
@@ -52,7 +55,13 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig configF;
 
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+
 bool taskCompleted = false;
+String formattedDate = "";
+String timeStamp = "";
+String dayStamp = "";
 
 // Check if photo capture was successful
 bool checkPhoto( fs::FS &fs ) {
@@ -69,6 +78,7 @@ void capturePhotoSaveSpiffs( void ) {
     // Take a photo with the camera
     Serial.println("Taking a photo...");
 
+    digitalWrite(LED_FLASH, HIGH);
     fb = esp_camera_fb_get();
     if (!fb) {
       Serial.println("Camera capture failed");
@@ -89,6 +99,12 @@ void capturePhotoSaveSpiffs( void ) {
       Serial.print(file.size());
       Serial.println(" bytes");
     }
+    digitalWrite(LED_FLASH, LOW);
+    formattedDate = timeClient.getFormattedDate();
+    int timeIndex = formattedDate.indexOf("T");
+    dayStamp = formattedDate.substring(0, timeIndex);
+    timeStamp = formattedDate.substring(timeIndex + 1, formattedDate.length() - 1);
+
     // Close the file
     file.close();
     esp_camera_fb_return(fb);
@@ -101,7 +117,7 @@ void capturePhotoSaveSpiffs( void ) {
 void initWiFi(){
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
+    delay(500);
     Serial.println("Connecting to WiFi...");
   }
 }
@@ -161,8 +177,13 @@ void initCamera(){
 void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
-  Serial.print("test");
+  pinMode(LED_FLASH, OUTPUT);
   initWiFi();
+  timeClient.begin();
+  timeClient.setTimeOffset(25200);
+  while(!timeClient.update()) {
+    timeClient.forceUpdate();
+  }
   initSPIFFS();
   // Turn-off the 'brownout detector'
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
@@ -185,16 +206,18 @@ void loop() {
   }
   delay(1);
   if (Firebase.ready() && !taskCompleted){
-    taskCompleted = true;
+    String path = "/photos/" + dayStamp + " " + timeStamp + ".jpg";
     Serial.print("Uploading picture... ");
 
     //MIME type should be valid to avoid the download problem.
     //The file systems for flash and SD/SDMMC can be changed in FirebaseFS.h.
-    if (Firebase.Storage.upload(&fbdo, STORAGE_BUCKET_ID /* Firebase Storage bucket id */, FILE_PHOTO /* path to local file */, mem_storage_type_flash /* memory storage type, mem_storage_type_flash and mem_storage_type_sd */, FILE_PHOTO /* path of remote file stored in the bucket */, "image/jpeg" /* mime type */)){
+    if (Firebase.Storage.upload(&fbdo, STORAGE_BUCKET_ID /* Firebase Storage bucket id */, FILE_PHOTO /* path to local file */, mem_storage_type_flash /* memory storage type, mem_storage_type_flash and mem_storage_type_sd */, path /* path of remote file stored in the bucket */, "image/jpeg" /* mime type */)){
       Serial.printf("\nDownload URL: %s\n", fbdo.downloadURL().c_str());
+      taskCompleted = true;
     }
     else{
       Serial.println(fbdo.errorReason());
+      taskCompleted = false;
     }
   }
 }
