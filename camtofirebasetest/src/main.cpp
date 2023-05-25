@@ -13,18 +13,18 @@
 #include <WifiUDP.h>
 
 //Replace with your network credentials
-const char* ssid = "DESKTOP-SIG8L49 31400000";
+const char* ssid = "DESKTOP-SIG8L49 3149";
 const char* password = "320?A46j";
 
 // Insert Firebase project API Key
-#define API_KEY "KKeQ43CDWIMORKzCNV1l65DVG4tr7FWTAIqAzgRt"
+#define API_KEY "p6MtqXkstPUvFZLr61JAjAD4DAMUD97Spp4kE3PC"
 
 // // Insert Authorized Email and Corresponding Password
 // #define USER_EMAIL "REPLACE_WITH_THE_AUTHORIZED_USER_EMAIL"
 // #define USER_PASSWORD "REPLACE_WITH_THE_AUTHORIZED_USER_PASSWORD"
 
 // Insert Firebase storage bucket ID e.g bucket-name.appspot.com
-#define STORAGE_BUCKET_ID "iot-sesi-lupa.appspot.com"
+#define STORAGE_BUCKET_ID "triot-d7e6e.appspot.com"
 
 // Photo File Name to save in SPIFFS
 #define FILE_PHOTO "/data/photo.jpg"
@@ -206,7 +206,7 @@ void loop() {
   }
   delay(1);
   if (Firebase.ready() && !taskCompleted){
-    String path = "/photos/" + dayStamp + " " + timeStamp + ".jpg";
+    String path = "/" + dayStamp + "/" + dayStamp + " " + timeStamp + ".jpg";
     Serial.print("Uploading picture... ");
 
     //MIME type should be valid to avoid the download problem.
