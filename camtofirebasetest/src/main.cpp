@@ -13,10 +13,8 @@
 #include <WifiUDP.h>
 
 //Replace with your network credentials
-const char* ssid = "DESKTOP-SIG8L49 3149";
-const char* password = "320?A46j";
-
-// Insert Firebase project API Key
+#define ssid "DESKTOP-SIG8L49 3149"
+#define password "320?A46j"
 #define API_KEY "p6MtqXkstPUvFZLr61JAjAD4DAMUD97Spp4kE3PC"
 
 // // Insert Authorized Email and Corresponding Password
@@ -47,8 +45,9 @@ const char* password = "320?A46j";
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 #define LED_FLASH         4
+#define REED_SWITCH       13
+#define BUZZER           12
 
-boolean takeNewPhoto = true;
 
 //Define Firebase Data objects
 FirebaseData fbdo;
@@ -58,7 +57,9 @@ FirebaseConfig configF;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
+bool takeNewPhoto = true;
 bool taskCompleted = false;
+bool doorState = false;
 String formattedDate = "";
 String timeStamp = "";
 String dayStamp = "";
@@ -174,10 +175,52 @@ void initCamera(){
   } 
 }
 
+void taskTakePhoto(void *pvParameter ){
+  while (true) {
+    if (takeNewPhoto) {
+      capturePhotoSaveSpiffs();
+      takeNewPhoto = false;
+    }
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+    if (Firebase.ready() && !taskCompleted) {
+      String path = "/" + dayStamp + "/" + dayStamp + " " + timeStamp + ".jpg";
+      Serial.print("Uploading picture... ");
+
+      //MIME type should be valid to avoid the download problem.
+      //The file systems for flash and SD/SDMMC can be changed in FirebaseFS.h.
+      if (Firebase.Storage.upload(&fbdo, STORAGE_BUCKET_ID /* Firebase Storage bucket id */, FILE_PHOTO /* path to local file */, mem_storage_type_flash /* memory storage type, mem_storage_type_flash and mem_storage_type_sd */, path /* path of remote file stored in the bucket */, "image/jpeg" /* mime type */)){
+        Serial.printf("\nDownload URL: %s\n", fbdo.downloadURL().c_str());
+        taskCompleted = true;
+      }
+      else{
+        Serial.println(fbdo.errorReason());
+        taskCompleted = false;
+      }
+    }
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+  }
+}
+
+void taskBuzzer(void *pvParameter ) {
+  while (true) {
+    if (doorState == 0) {
+      digitalWrite(BUZZER, 1);
+      vTaskDelay(1000 / portTICK_PERIOD_MS);
+      digitalWrite(BUZZER, 0);
+    } else {
+      digitalWrite(BUZZER, 0);
+    }
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+  }
+}
+
 void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
   pinMode(LED_FLASH, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+  pinMode(REED_SWITCH, INPUT_PULLUP);
+
   initWiFi();
   timeClient.begin();
   timeClient.setTimeOffset(25200);
@@ -200,24 +243,9 @@ void setup() {
 }
 
 void loop() {
-  if (takeNewPhoto) {
-    capturePhotoSaveSpiffs();
-    takeNewPhoto = false;
-  }
-  delay(1);
-  if (Firebase.ready() && !taskCompleted){
-    String path = "/" + dayStamp + "/" + dayStamp + " " + timeStamp + ".jpg";
-    Serial.print("Uploading picture... ");
-
-    //MIME type should be valid to avoid the download problem.
-    //The file systems for flash and SD/SDMMC can be changed in FirebaseFS.h.
-    if (Firebase.Storage.upload(&fbdo, STORAGE_BUCKET_ID /* Firebase Storage bucket id */, FILE_PHOTO /* path to local file */, mem_storage_type_flash /* memory storage type, mem_storage_type_flash and mem_storage_type_sd */, path /* path of remote file stored in the bucket */, "image/jpeg" /* mime type */)){
-      Serial.printf("\nDownload URL: %s\n", fbdo.downloadURL().c_str());
-      taskCompleted = true;
-    }
-    else{
-      Serial.println(fbdo.errorReason());
-      taskCompleted = false;
-    }
+  doorState = digitalRead(REED_SWITCH);
+  if (doorState == 0) {
+    takeNewPhoto = true;
+    taskCompleted = false;
   }
 }
