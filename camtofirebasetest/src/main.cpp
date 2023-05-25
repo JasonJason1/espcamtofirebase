@@ -27,8 +27,8 @@
 // Photo File Name to save in SPIFFS
 #define FILE_PHOTO "/data/photo.jpg"
 
-#define HIGH 0
-#define LOW 1
+#define HIGH 1
+#define LOW 0
 
 // OV2640 camera module pins (CAMERA_MODEL_AI_THINKER)
 #define PWDN_GPIO_NUM     32
@@ -60,7 +60,7 @@ FirebaseConfig configF;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
-bool takeNewPhoto = true;
+bool takeNewPhoto = false;
 bool taskCompleted = false;
 int doorState = 0;
 String formattedDate = "";
@@ -124,6 +124,7 @@ void initWiFi(){
     delay(500);
     Serial.println("Connecting to WiFi...");
   }
+  Serial.println("Connected to the WiFi network");
 }
 
 void initSPIFFS(){
@@ -183,48 +184,49 @@ void taskTakePhoto(void *pvParameter ){
     if (takeNewPhoto) {
       capturePhotoSaveSpiffs();
       takeNewPhoto = false;
-    }
-    vTaskDelay(1 / portTICK_PERIOD_MS);
-    if (Firebase.ready() && !taskCompleted) {
-      String path = "/" + dayStamp + "/" + dayStamp + " " + timeStamp + ".jpg";
-      Serial.print("Uploading picture... ");
+      vTaskDelay(1 / portTICK_PERIOD_MS);
+      if (Firebase.ready() && !taskCompleted) {
+        String path = "/" + dayStamp + "/" + dayStamp + " " + timeStamp + ".jpg";
+        Serial.print("Uploading picture... ");
 
-      //MIME type should be valid to avoid the download problem.
-      //The file systems for flash and SD/SDMMC can be changed in FirebaseFS.h.
-      if (Firebase.Storage.upload(&fbdo, STORAGE_BUCKET_ID /* Firebase Storage bucket id */, FILE_PHOTO /* path to local file */, mem_storage_type_flash /* memory storage type, mem_storage_type_flash and mem_storage_type_sd */, path /* path of remote file stored in the bucket */, "image/jpeg" /* mime type */)){
-        // Serial.printf("\nDownload URL: %s\n", fbdo.downloadURL().c_str());
-        Serial.println("Upload Success");
-        taskCompleted = true;
-      }
-      else{
-        Serial.println(fbdo.errorReason());
-        taskCompleted = false;
+        //MIME type should be valid to avoid the download problem.
+        //The file systems for flash and SD/SDMMC can be changed in FirebaseFS.h.
+        if (Firebase.Storage.upload(&fbdo, STORAGE_BUCKET_ID /* Firebase Storage bucket id */, FILE_PHOTO /* path to local file */, mem_storage_type_flash /* memory storage type, mem_storage_type_flash and mem_storage_type_sd */, path /* path of remote file stored in the bucket */, "image/jpeg" /* mime type */)){
+          // Serial.printf("\nDownload URL: %s\n", fbdo.downloadURL().c_str());
+          Serial.println("Upload Success");
+          taskCompleted = true;
+        }
+        else{
+          Serial.println(fbdo.errorReason());
+          taskCompleted = false;
+        }
       }
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
 
-void taskBuzzer(void *pvParameter) {
-  while (true) {
-    if (doorState == LOW) {
-      digitalWrite(BUZZER, HIGH);
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
-      digitalWrite(BUZZER, LOW);
-    } else {
-      digitalWrite(BUZZER, LOW);
-    }
-    vTaskDelay(1 / portTICK_PERIOD_MS);
-  }
-}
+// void taskBuzzer(void *pvParameter) {
+//   while (true) {
+//     if (doorState == LOW) {
+//       digitalWrite(BUZZER, HIGH);
+//       vTaskDelay(1000 / portTICK_PERIOD_MS);
+//       digitalWrite(BUZZER, LOW);
+//     } else {
+//       digitalWrite(BUZZER, LOW);
+//     }
+//     vTaskDelay(1 / portTICK_PERIOD_MS);
+//   }
+// }
 
 void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
   pinMode(LED_FLASH, OUTPUT);
+  pinMode(2, OUTPUT);
   pinMode(BUZZER, OUTPUT);
   pinMode(REED_SWITCH, INPUT_PULLUP);
-  digitalWrite(BUZZER, LOW);
+  digitalWrite(2, LOW);
 
   initWiFi();
 
@@ -247,6 +249,9 @@ void setup() {
 
   Firebase.begin(&configF, &auth);
   Firebase.reconnectWiFi(true);
+  xTaskCreatePinnedToCore(taskTakePhoto, "taskTakePhoto", 10000, NULL, 1, NULL, 0);
+  // xTaskCreatePinnedToCore(taskBuzzer, "taskBuzzer", 2048, NULL, 1, NULL, 0);
+  digitalWrite(2, HIGH);
 }
 
 void loop() {
@@ -255,6 +260,7 @@ void loop() {
   if (doorState == LOW) {
     takeNewPhoto = true;
     taskCompleted = false;
+    delay(10000);
   }
-  delay(1);
+  delay(1000);
 }
