@@ -189,7 +189,8 @@ void taskTakePhoto(void *pvParameter ){
       //MIME type should be valid to avoid the download problem.
       //The file systems for flash and SD/SDMMC can be changed in FirebaseFS.h.
       if (Firebase.Storage.upload(&fbdo, STORAGE_BUCKET_ID /* Firebase Storage bucket id */, FILE_PHOTO /* path to local file */, mem_storage_type_flash /* memory storage type, mem_storage_type_flash and mem_storage_type_sd */, path /* path of remote file stored in the bucket */, "image/jpeg" /* mime type */)){
-        Serial.printf("\nDownload URL: %s\n", fbdo.downloadURL().c_str());
+        // Serial.printf("\nDownload URL: %s\n", fbdo.downloadURL().c_str());
+        Serial.println("Upload Success");
         taskCompleted = true;
       }
       else{
@@ -201,7 +202,7 @@ void taskTakePhoto(void *pvParameter ){
   }
 }
 
-void taskBuzzer(void *pvParameter ) {
+void taskBuzzer(void *pvParameter) {
   while (true) {
     if (doorState == 0) {
       digitalWrite(BUZZER, 1);
@@ -222,11 +223,13 @@ void setup() {
   pinMode(REED_SWITCH, INPUT_PULLUP);
 
   initWiFi();
+  
   timeClient.begin();
   timeClient.setTimeOffset(25200);
   while(!timeClient.update()) {
     timeClient.forceUpdate();
   }
+
   initSPIFFS();
   // Turn-off the 'brownout detector'
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
