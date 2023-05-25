@@ -49,7 +49,7 @@
 #define PCLK_GPIO_NUM     22
 #define LED_FLASH         4
 #define REED_SWITCH       13
-#define BUZZER            12
+#define BUZZER            15
 
 
 //Define Firebase Data objects
@@ -62,7 +62,7 @@ NTPClient timeClient(ntpUDP);
 
 bool takeNewPhoto = false;
 bool taskCompleted = false;
-int doorState = 0;
+int doorState = 1;
 String formattedDate = "";
 String timeStamp = "";
 String dayStamp = "";
@@ -86,7 +86,7 @@ void capturePhotoSaveSpiffs( void ) {
     fb = esp_camera_fb_get();
     if (!fb) {
       Serial.println("Camera capture failed");
-      return;
+      ESP.restart();
     }
     // Photo file name
     Serial.printf("Picture file name: %s\n", FILE_PHOTO);
@@ -206,25 +206,26 @@ void taskTakePhoto(void *pvParameter ){
   }
 }
 
-// void taskBuzzer(void *pvParameter) {
-//   while (true) {
-//     if (doorState == LOW) {
-//       digitalWrite(BUZZER, HIGH);
-//       vTaskDelay(1000 / portTICK_PERIOD_MS);
-//       digitalWrite(BUZZER, LOW);
-//     } else {
-//       digitalWrite(BUZZER, LOW);
-//     }
-//     vTaskDelay(1 / portTICK_PERIOD_MS);
-//   }
-// }
+void taskBuzzer(void *pvParameter) {
+  while (true) {
+    if (taskCompleted == true ) {
+      do{
+        digitalWrite(BUZZER, LOW);
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
+      } while (doorState == LOW);
+    } else {
+      digitalWrite(BUZZER, HIGH);
+    }
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+  }
+}
 
 void setup() {
-  // Serial port for debugging purposes
   Serial.begin(115200);
   pinMode(LED_FLASH, OUTPUT);
   pinMode(2, OUTPUT);
   pinMode(BUZZER, OUTPUT);
+  digitalWrite(BUZZER, HIGH);
   pinMode(REED_SWITCH, INPUT_PULLUP);
   digitalWrite(2, LOW);
 
@@ -250,7 +251,7 @@ void setup() {
   Firebase.begin(&configF, &auth);
   Firebase.reconnectWiFi(true);
   xTaskCreatePinnedToCore(taskTakePhoto, "taskTakePhoto", 10000, NULL, 1, NULL, 0);
-  // xTaskCreatePinnedToCore(taskBuzzer, "taskBuzzer", 2048, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(taskBuzzer, "taskBuzzer", 10000, NULL, 1, NULL, 1);
   digitalWrite(2, HIGH);
 }
 
@@ -260,7 +261,7 @@ void loop() {
   if (doorState == LOW) {
     takeNewPhoto = true;
     taskCompleted = false;
-    delay(10000);
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
   }
-  delay(1000);
+  vTaskDelay(100 / portTICK_PERIOD_MS);
 }
