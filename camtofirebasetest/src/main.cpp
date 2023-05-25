@@ -27,6 +27,9 @@
 // Photo File Name to save in SPIFFS
 #define FILE_PHOTO "/data/photo.jpg"
 
+#define HIGH 0
+#define LOW 1
+
 // OV2640 camera module pins (CAMERA_MODEL_AI_THINKER)
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
@@ -46,7 +49,7 @@
 #define PCLK_GPIO_NUM     22
 #define LED_FLASH         4
 #define REED_SWITCH       13
-#define BUZZER           12
+#define BUZZER            12
 
 
 //Define Firebase Data objects
@@ -59,7 +62,7 @@ NTPClient timeClient(ntpUDP);
 
 bool takeNewPhoto = true;
 bool taskCompleted = false;
-bool doorState = false;
+int doorState = 0;
 String formattedDate = "";
 String timeStamp = "";
 String dayStamp = "";
@@ -204,12 +207,12 @@ void taskTakePhoto(void *pvParameter ){
 
 void taskBuzzer(void *pvParameter) {
   while (true) {
-    if (doorState == 0) {
-      digitalWrite(BUZZER, 1);
+    if (doorState == LOW) {
+      digitalWrite(BUZZER, HIGH);
       vTaskDelay(1000 / portTICK_PERIOD_MS);
-      digitalWrite(BUZZER, 0);
+      digitalWrite(BUZZER, LOW);
     } else {
-      digitalWrite(BUZZER, 0);
+      digitalWrite(BUZZER, LOW);
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);
   }
@@ -221,9 +224,10 @@ void setup() {
   pinMode(LED_FLASH, OUTPUT);
   pinMode(BUZZER, OUTPUT);
   pinMode(REED_SWITCH, INPUT_PULLUP);
+  digitalWrite(BUZZER, LOW);
 
   initWiFi();
-  
+
   timeClient.begin();
   timeClient.setTimeOffset(25200);
   while(!timeClient.update()) {
@@ -247,8 +251,10 @@ void setup() {
 
 void loop() {
   doorState = digitalRead(REED_SWITCH);
-  if (doorState == 0) {
+  Serial.println(doorState);
+  if (doorState == LOW) {
     takeNewPhoto = true;
     taskCompleted = false;
   }
+  delay(1);
 }
