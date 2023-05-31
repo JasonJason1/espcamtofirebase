@@ -13,9 +13,10 @@
 #include <WifiUDP.h>
 
 //Replace with your network credentials
-#define ssid "DESKTOP-SIG8L49 3149"
-#define password "320?A46j"
-#define API_KEY "p6MtqXkstPUvFZLr61JAjAD4DAMUD97Spp4kE3PC"
+#define ssid "Ye"
+#define password "1234asdf"
+#define FIREBASE_HOST "https://triot-d7e6e-default-rtdb.firebaseio.com/"
+#define FIREBASE_AUTH "p6MtqXkstPUvFZLr61JAjAD4DAMUD97Spp4kE3PC"
 
 // // Insert Authorized Email and Corresponding Password
 // #define USER_EMAIL "REPLACE_WITH_THE_AUTHORIZED_USER_EMAIL"
@@ -50,22 +51,21 @@
 #define LED_FLASH         4
 #define REED_SWITCH       13
 #define BUZZER            15
+#define PIN_LED           2
 
 
 //Define Firebase Data objects
 FirebaseData fbdo;
 FirebaseAuth auth;
-FirebaseConfig configF;
+FirebaseConfig fbConfig;
+FirebaseData fbdoStream;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
-bool takeNewPhoto = false;
-bool taskCompleted = false;
-int doorState = 1;
-String formattedDate = "";
-String timeStamp = "";
-String dayStamp = "";
+bool buzzerState = false, taskCompleted = false, readyToSendDoorState = false;
+int doorState = 0, beforeDoorState = 1, lockState = 0;
+String formattedDate = "", timeStamp = "", dayStamp = "";
 
 // Check if photo capture was successful
 bool checkPhoto( fs::FS &fs ) {
@@ -75,14 +75,14 @@ bool checkPhoto( fs::FS &fs ) {
 }
 
 // Capture Photo and Save it to SPIFFS
-void capturePhotoSaveSpiffs( void ) {
+void capturePhotoSaveSpiffs(int flashOnOff) {
   camera_fb_t * fb = NULL; // pointer
   bool ok = 0; // Boolean indicating if the picture has been taken correctly
   do {
     // Take a photo with the camera
     Serial.println("Taking a photo...");
 
-    digitalWrite(LED_FLASH, HIGH);
+    digitalWrite(LED_FLASH, flashOnOff);
     fb = esp_camera_fb_get();
     if (!fb) {
       Serial.println("Camera capture failed");
@@ -103,7 +103,10 @@ void capturePhotoSaveSpiffs( void ) {
       Serial.print(file.size());
       Serial.println(" bytes");
     }
-    digitalWrite(LED_FLASH, LOW);
+    if (flashOnOff == HIGH) {
+      flashOnOff = LOW;
+    }
+    digitalWrite(LED_FLASH, flashOnOff);
     formattedDate = timeClient.getFormattedDate();
     int timeIndex = formattedDate.indexOf("T");
     dayStamp = formattedDate.substring(0, timeIndex);
@@ -119,12 +122,16 @@ void capturePhotoSaveSpiffs( void ) {
 }
 
 void initWiFi(){
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.println("Connection Failed! Rebooting...");
     delay(500);
-    Serial.println("Connecting to WiFi...");
-  }
-  Serial.println("Connected to the WiFi network");
+    ESP.restart();
+  }  
+  Serial.print("System connected with IP address: ");
+  Serial.println(WiFi.localIP());
+  Serial.printf("RSSI: %d\n", WiFi.RSSI());
 }
 
 void initSPIFFS(){
@@ -179,13 +186,61 @@ void initCamera(){
   } 
 }
 
+void onFirebaseStream(FirebaseStream data) {
+  Serial.printf("onFirebaseStream: %s %s %s %s\n", data.streamPath().c_str(),
+                data.dataPath().c_str(), data.dataType().c_str(),
+                data.stringData().c_str());
+  if (data.dataType() == "int") {
+    int value = data.intData();
+    if (data.dataPath() == "/LockState" && value <= 1 && value >= 0)
+      lockState = value;
+  }
+}
+
+void Firebase_BeginStream(const String& streamPath) {
+  String path = streamPath;
+  if (Firebase.RTDB.beginStream(&fbdoStream, path.c_str()))
+  {
+    Serial.println("Firebase stream on "+ path);
+    Firebase.RTDB.setStreamCallback(&fbdoStream, onFirebaseStream, 0);
+  }
+  else
+    Serial.println("Firebase stream failed: "+fbdoStream.errorReason());
+}
+
+void Firebase_EndStream(const String& streamPath) {
+  if(Firebase.RTDB.endStream(&fbdoStream))
+    Serial.println("Firebase stream end");
+}
+
+void Firebase_Init(const String& streamPath) {
+  FirebaseAuth fbAuth;
+  fbConfig.host = FIREBASE_HOST;
+  fbConfig.signer.tokens.legacy_token = FIREBASE_AUTH;
+  fbConfig.token_status_callback = tokenStatusCallback;
+  Firebase.begin(&fbConfig, &fbAuth);
+  Firebase.reconnectWiFi(true);
+
+  // fbdo.setResponseSize(2048);
+  // Firebase.RTDB.setwriteSizeLimit(&fbdo, "medium");
+  while (!Firebase.ready())
+  {
+    Serial.println("Connecting to firebase...");
+    delay(1000);
+  }
+  Serial.println("Connected to firebase");
+  Firebase_BeginStream(streamPath);
+}
+
 void taskTakePhoto(void *pvParameter ){
   while (true) {
-    if (takeNewPhoto) {
-      capturePhotoSaveSpiffs();
-      takeNewPhoto = false;
-      vTaskDelay(1 / portTICK_PERIOD_MS);
-      if (Firebase.ready() && !taskCompleted) {
+    if (doorState == HIGH) {
+      readyToSendDoorState = false;
+      Firebase_EndStream("Receive");
+      vTaskDelay(2000 / portTICK_PERIOD_MS);
+      capturePhotoSaveSpiffs(HIGH);
+
+      while (!taskCompleted) {
         String path = "/" + dayStamp + "/" + dayStamp + " " + timeStamp + ".jpg";
         Serial.print("Uploading picture... ");
 
@@ -195,12 +250,15 @@ void taskTakePhoto(void *pvParameter ){
           // Serial.printf("\nDownload URL: %s\n", fbdo.downloadURL().c_str());
           Serial.println("Upload Success");
           taskCompleted = true;
+          readyToSendDoorState = true;
+          Firebase_BeginStream("Receive");
         }
         else{
           Serial.println(fbdo.errorReason());
           taskCompleted = false;
         }
       }
+      vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);
   }
@@ -208,11 +266,13 @@ void taskTakePhoto(void *pvParameter ){
 
 void taskBuzzer(void *pvParameter) {
   while (true) {
-    if (taskCompleted == true ) {
-      do{
-        digitalWrite(BUZZER, LOW);
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
-      } while (doorState == LOW);
+    if (taskCompleted == true && buzzerState == true) {
+      digitalWrite(BUZZER, LOW);
+      vTaskDelay(5000 / portTICK_PERIOD_MS);
+      if(doorState == LOW){
+        buzzerState = false;
+        digitalWrite(BUZZER, HIGH);
+      }
     } else {
       digitalWrite(BUZZER, HIGH);
     }
@@ -220,20 +280,37 @@ void taskBuzzer(void *pvParameter) {
   }
 }
 
+void taskSendDoorState(void *pvParameter) {
+  while (true) {
+    if (doorState != beforeDoorState && readyToSendDoorState == true) {
+      if (doorState == HIGH) {
+        Firebase.RTDB.setString(&fbdo, "/Send/DoorState", "Open");
+        Serial.println("Door Open Send");
+      } else if (doorState == LOW) {
+        Firebase.RTDB.setString(&fbdo, "/Send/DoorState", "Close");
+        Serial.println("Door Close Send");
+      }
+      beforeDoorState = doorState;
+    } 
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(LED_FLASH, OUTPUT);
-  pinMode(2, OUTPUT);
   pinMode(BUZZER, OUTPUT);
   digitalWrite(BUZZER, HIGH);
   pinMode(REED_SWITCH, INPUT_PULLUP);
-  digitalWrite(2, LOW);
+  pinMode(PIN_LED, OUTPUT);
+  digitalWrite(PIN_LED, LOW);
 
   initWiFi();
 
   timeClient.begin();
   timeClient.setTimeOffset(25200);
   while(!timeClient.update()) {
+    Serial.println("Waiting for time");
     timeClient.forceUpdate();
   }
 
@@ -241,27 +318,29 @@ void setup() {
   // Turn-off the 'brownout detector'
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   initCamera();
+  // Test Capture Camera
+  capturePhotoSaveSpiffs(LOW);
 
   //Firebase
   // Assign the api key
-  configF.signer.tokens.legacy_token = API_KEY;
-  //Assign the callback function for the long running token generation task
-  configF.token_status_callback = tokenStatusCallback; //see addons/TokenHelper.h
+  Firebase_Init("Receive");
 
-  Firebase.begin(&configF, &auth);
-  Firebase.reconnectWiFi(true);
-  xTaskCreatePinnedToCore(taskTakePhoto, "taskTakePhoto", 10000, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(taskBuzzer, "taskBuzzer", 10000, NULL, 1, NULL, 1);
-  digitalWrite(2, HIGH);
+  xTaskCreatePinnedToCore(taskTakePhoto, "taskTakePhoto", 10000, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(taskBuzzer, "taskBuzzer", 2048, NULL, 2, NULL, 1);
+  xTaskCreatePinnedToCore(taskSendDoorState, "taskSendDoorState", 10000, NULL, 1, NULL, 1);
+  digitalWrite(PIN_LED, HIGH);
 }
 
 void loop() {
-  doorState = digitalRead(REED_SWITCH);
-  Serial.println(doorState);
-  if (doorState == LOW) {
-    takeNewPhoto = true;
-    taskCompleted = false;
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
+  if(lockState == 0) {
+    doorState = digitalRead(REED_SWITCH);
+    Serial.println(doorState);
+    if (doorState == HIGH) {
+      buzzerState = true;
+      taskCompleted = false;
+    }
+  } else {
+    Serial.println("Is Unlocked");
   }
   vTaskDelay(100 / portTICK_PERIOD_MS);
 }
