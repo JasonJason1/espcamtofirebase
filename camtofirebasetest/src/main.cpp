@@ -287,11 +287,8 @@ void Firebase_BeginStream(const String& streamPath) {
     Serial.println("Firebase stream on "+ path);
     Firebase.RTDB.setStreamCallback(&fbdoStream, onFirebaseStream, 0);
   }
-  else {
+  else
     Serial.println("Firebase stream failed: "+fbdoStream.errorReason());
-    Serial.println("Trying to begin stream again");
-    Firebase_BeginStream(streamPath);
-  }
 }
 
 void Firebase_EndStream(const String& streamPath) {
