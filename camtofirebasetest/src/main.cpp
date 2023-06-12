@@ -109,7 +109,9 @@ void taskSendDoorState(void *pvParameter) {
 
 void setup() {
   Serial.begin(115200);
-  pinMode(LED_FLASH, OUTPUT);
+  // pinMode(LED_FLASH, OUTPUT);
+  ledcSetup(LEDC_CHANNEL_0, 5000, 8);
+  ledcAttachPin(LED_FLASH, LEDC_CHANNEL_0);
   pinMode(BUZZER, OUTPUT);
   digitalWrite(BUZZER, HIGH);
   pinMode(REED_SWITCH, INPUT_PULLUP);
@@ -138,6 +140,7 @@ void loop() {
   if(lockState == 0) {
     doorState = digitalRead(REED_SWITCH);
   }
+  // Serial.println(lockState);
   vTaskDelay(100 / portTICK_PERIOD_MS);
 }
 
@@ -156,7 +159,8 @@ void capturePhotoSaveSpiffs(int flashOnOff) {
     // Take a photo with the camera
     Serial.println("Taking a photo...");
     if (flashOnOff == HIGH) {
-      digitalWrite(LED_FLASH, HIGH);
+      // digitalWrite(LED_FLASH, HIGH);
+      ledcWrite(0, 10);
     }
     fb = esp_camera_fb_get();
     if (!fb) {
@@ -179,7 +183,8 @@ void capturePhotoSaveSpiffs(int flashOnOff) {
       Serial.println(" bytes");
     }
     if (flashOnOff == HIGH) {
-      digitalWrite(LED_FLASH, LOW);
+      // digitalWrite(LED_FLASH, LOW);
+      ledcWrite(0, 0);
     }
     formattedDate = timeClient.getFormattedDate();
     int timeIndex = formattedDate.indexOf("T");
@@ -273,10 +278,12 @@ void onFirebaseStream(FirebaseStream data) {
   Serial.printf("onFirebaseStream: %s %s %s %s\n", data.streamPath().c_str(),
                 data.dataPath().c_str(), data.dataType().c_str(),
                 data.stringData().c_str());
-  if (data.dataType() == "int") {
-    int value = data.intData();
-    if (data.dataPath() == "/LockState" && value <= 1 && value >= 0)
-      lockState = value;
+  if (data.dataType() == "json") {
+    if(data.stringData() == "{\"LockState\":1}") {
+      lockState = 1;
+    } else {
+      lockState = 0;
+    }
   }
 }
 
@@ -287,7 +294,7 @@ void Firebase_BeginStream(const String& streamPath) {
     Serial.println("Firebase stream on "+ path);
     Firebase.RTDB.setStreamCallback(&fbdoStream, onFirebaseStream, 0);
   }
-  else
+  else 
     Serial.println("Firebase stream failed: "+fbdoStream.errorReason());
 }
 
