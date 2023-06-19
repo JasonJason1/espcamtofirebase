@@ -118,7 +118,6 @@ void taskSendDoorState(void *pvParameter) {
 
 void setup() {
   Serial.begin(115200);
-  // pinMode(LED_FLASH, OUTPUT);
   ledcSetup(LEDC_CHANNEL_0, 5000, 8);
   ledcAttachPin(LED_FLASH, LEDC_CHANNEL_0);
   pinMode(BUZZER, OUTPUT);
