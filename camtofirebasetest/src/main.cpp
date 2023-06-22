@@ -146,6 +146,7 @@ void setup() {
   xTaskCreatePinnedToCore(taskBuzzer, "taskBuzzer", 2048, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(taskSendDoorState, "taskSendDoorState", 10000, NULL, 1, NULL, 1);
   digitalWrite(PIN_LED, HIGH);
+  delay(1000);
 }
 
 void loop() {
